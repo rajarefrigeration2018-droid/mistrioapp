@@ -1,0 +1,46 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: stable
+          cache: true
+
+      # google-services.json is stored as raw JSON in the secret (not base64)
+      - name: Restore Firebase config
+        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+
+      # Same keystore every build, so the SHA-1 registered in Firebase keeps working
+      - name: Restore keystore
+        run: echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > android/app/debug.keystore
+
+      - name: Print SHA-1
+        run: |
+          keytool -list -v -keystore android/app/debug.keystore \
+            -alias androiddebugkey -storepass android -keypass android | grep SHA1 || true
+
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos || true
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mistrio-user-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
